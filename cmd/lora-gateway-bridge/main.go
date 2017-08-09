@@ -28,7 +28,7 @@ func run(c *cli.Context) error {
 	var pubsub *mqttpubsub.Backend
 	for {
 		var err error
-		pubsub, err = mqttpubsub.NewBackend(c.String("mqtt-server"), c.String("mqtt-username"), c.String("mqtt-password"), c.String("mqtt-ca-cert"))
+		pubsub, err = mqttpubsub.NewBackend(c.String("mqtt-server"), c.String("mqtt-prefix"), c.String("mqtt-username"), c.String("mqtt-password"), c.String("mqtt-ca-cert"))
 		if err == nil {
 			break
 		}
@@ -102,6 +102,12 @@ func main() {
 			Usage:  "mqtt server (e.g. scheme://host:port where scheme is tcp, ssl or ws)",
 			Value:  "tcp://127.0.0.1:1883",
 			EnvVar: "MQTT_SERVER",
+		},
+		cli.StringFlag{
+			Name:   "mqtt-prefix",
+			Usage:  "mqtt root prefix",
+			Value:  "",
+			EnvVar: "MQTT_PREFIX",
 		},
 		cli.StringFlag{
 			Name:   "mqtt-username",

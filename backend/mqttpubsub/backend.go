@@ -18,16 +18,21 @@ import (
 // Backend implements a MQTT pub-sub backend.
 type Backend struct {
 	conn         mqtt.Client
+	prefix       string // the string to prepend to all topics
 	txPacketChan chan gw.TXPacketBytes
 	gateways     map[lorawan.EUI64]struct{}
 	mutex        sync.RWMutex
 }
 
 // NewBackend creates a new Backend.
-func NewBackend(server, username, password, cafile string) (*Backend, error) {
+func NewBackend(server, prefix, username, password, cafile string) (*Backend, error) {
 	b := Backend{
 		txPacketChan: make(chan gw.TXPacketBytes),
 		gateways:     make(map[lorawan.EUI64]struct{}),
+	}
+
+	if len(prefix) > 0 {
+		b.prefix = prefix + "/"
 	}
 
 	opts := mqtt.NewClientOptions()
@@ -89,7 +94,7 @@ func (b *Backend) SubscribeGatewayTX(mac lorawan.EUI64) error {
 	defer b.mutex.Unlock()
 	b.mutex.Lock()
 
-	topic := fmt.Sprintf("gateway/%s/tx", mac.String())
+	topic := fmt.Sprintf("%sgateway/%s/tx", b.prefix, mac.String())
 	log.WithField("topic", topic).Info("backend: subscribing to topic")
 	if token := b.conn.Subscribe(topic, 0, b.txPacketHandler); token.Wait() && token.Error() != nil {
 		return token.Error()
@@ -104,7 +109,7 @@ func (b *Backend) UnSubscribeGatewayTX(mac lorawan.EUI64) error {
 	defer b.mutex.Unlock()
 	b.mutex.Lock()
 
-	topic := fmt.Sprintf("gateway/%s/tx", mac.String())
+	topic := fmt.Sprintf("%sgateway/%s/tx", b.prefix, mac.String())
 	log.WithField("topic", topic).Info("backend: unsubscribing from topic")
 	if token := b.conn.Unsubscribe(topic); token.Wait() && token.Error() != nil {
 		return token.Error()
@@ -115,13 +120,13 @@ func (b *Backend) UnSubscribeGatewayTX(mac lorawan.EUI64) error {
 
 // PublishGatewayRX publishes a RX packet to the MQTT broker.
 func (b *Backend) PublishGatewayRX(mac lorawan.EUI64, rxPacket gw.RXPacketBytes) error {
-	topic := fmt.Sprintf("gateway/%s/rx", mac.String())
+	topic := fmt.Sprintf("%sgateway/%s/rx", b.prefix, mac.String())
 	return b.publish(topic, rxPacket)
 }
 
 // PublishGatewayStats publishes a GatewayStatsPacket to the MQTT broker.
 func (b *Backend) PublishGatewayStats(mac lorawan.EUI64, stats gw.GatewayStatsPacket) error {
-	topic := fmt.Sprintf("gateway/%s/stats", mac.String())
+	topic := fmt.Sprintf("%sgateway/%s/stats", b.prefix, mac.String())
 	return b.publish(topic, stats)
 }
 
@@ -157,7 +162,7 @@ func (b *Backend) onConnected(c mqtt.Client) {
 			log.WithField("topic_count", len(b.gateways)).Info("backend: re-registering to gateway topics")
 			topics := make(map[string]byte)
 			for k := range b.gateways {
-				topics[fmt.Sprintf("gateway/%s/tx", k)] = 0
+				topics[fmt.Sprintf("%sgateway/%s/tx", b.prefix, k)] = 0
 			}
 			if token := b.conn.SubscribeMultiple(topics, b.txPacketHandler); token.Wait() && token.Error() != nil {
 				log.WithField("topic_count", len(topics)).Errorf("backend: subscribe multiple failed: %s", token.Error())
