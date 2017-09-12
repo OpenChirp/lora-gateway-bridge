@@ -4,6 +4,9 @@ UDP_BIND=0.0.0.0:1700
 # mqtt server (e.g. scheme://host:port where scheme is tcp, ssl or ws) (default: "tcp://127.0.0.1:1883")
 MQTT_SERVER=tcp://127.0.0.1:1883
 
+# mqtt topic prefix (optional) 
+MQTT_PREFIX=
+
 # mqtt server username (optional) 
 MQTT_USERNAME=
 
