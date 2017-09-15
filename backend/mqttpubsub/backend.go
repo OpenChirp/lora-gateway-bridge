@@ -3,13 +3,13 @@ package mqttpubsub
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"io/ioutil"	
+	"io/ioutil"
 	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/brocaar/loraserver/api/gw"
 	"github.com/brocaar/lorawan"
 	"github.com/eclipse/paho.mqtt.golang"
@@ -41,14 +41,14 @@ func NewBackend(server, prefix, username, password, cafile string) (*Backend, er
 	opts.SetPassword(password)
 	opts.SetOnConnectHandler(b.onConnected)
 	opts.SetConnectionLostHandler(b.onConnectionLost)
-	
+
 	if cafile != "" {
 		tlsconfig, err := NewTLSConfig(cafile)
 		if err == nil {
 			opts.SetTLSConfig(tlsconfig)
 		}
 	}
-	
+
 	log.WithField("server", server).Info("backend: connecting to mqtt broker")
 	b.conn = mqtt.NewClient(opts)
 	if token := b.conn.Connect(); token.Wait() && token.Error() != nil {
@@ -61,16 +61,16 @@ func NewBackend(server, prefix, username, password, cafile string) (*Backend, er
 // NewTLSConfig returns the TLS configuration.
 func NewTLSConfig(cafile string) (*tls.Config, error) {
 	// Import trusted certificates from CAfile.pem.
-	
+
 	cert, err := ioutil.ReadFile(cafile)
 	if err != nil {
 		log.Errorf("backend: couldn't load cafile: %s", err)
 		return nil, err
 	}
-	
+
 	certpool := x509.NewCertPool()
 	certpool.AppendCertsFromPEM(cert)
-	
+
 	// Create tls.Config with desired tls properties
 	return &tls.Config{
 		// RootCAs = certs used to verify server cert.

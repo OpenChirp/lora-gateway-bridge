@@ -32,24 +32,17 @@ pre-compiled packages available):
 ##### Go
 
 Make sure you have [Go](https://golang.org/) installed (1.7+) and that the LoRa
-App Server repository has been cloned to 
-`$GOPATH/src/github.com/brocaar/lora-app-server`.
-
-##### Development utilities
-
-Finally, install some utilities used for development by executing the
-following commands:
-
-```bash
-go get github.com/golang/lint/golint
-go get github.com/kisielk/errcheck
-```
+Gateway Bridge repository has been cloned to 
+`$GOPATH/src/github.com/brocaar/lora-gateway-bridge`.
 
 #### Example commands
 
 A few example commands that you can run:
 
 ```bash
+# install all requirements
+make requirements
+
 # run the tests
 make test
 

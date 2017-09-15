@@ -7,7 +7,7 @@ GOARCH ?= amd64
 build:
 	@echo "Compiling source for $(GOOS) $(GOARCH)"
 	@mkdir -p build
-	@GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags "-X main.version=$(VERSION)" -o build/lora-gateway-bridge$(BINEXT) cmd/lora-gateway-bridge/main.go
+	@GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build -a -installsuffix cgo -ldflags "-X main.version=$(VERSION)" -o build/lora-gateway-bridge$(BINEXT) cmd/lora-gateway-bridge/main.go
 
 clean:
 	@echo "Cleaning up workspace"
@@ -38,6 +38,10 @@ package: clean build
 
 package-deb:
 	@cd packaging && TARGET=deb ./package.sh
+
+requirements:
+	@go get -u github.com/golang/lint/golint
+	@go get -u github.com/kisielk/errcheck
 
 # shortcuts for development
 

@@ -1,21 +1,11 @@
 ---
-title: On the gateway
+title: Kerlink
 menu:
     main:
-        parent: install
-        weight: 3
+        parent: gateway
 ---
 
-## Install on the gateway
-
-### Raspberry Pi / Rasbian based gateway
-
-For Raspberry Pi / Rasbian based gateways, please refer the
-[Debian / Ubuntu]({{< relref "debian.md" >}}) installation instructions.
-
-### Multitech Conduit
-
-Todo.
+## Kerlink
 
 ### Kerlink IOT station
 
