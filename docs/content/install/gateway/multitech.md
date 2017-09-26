@@ -45,7 +45,11 @@ netmask by adding a “#” at the beginning of each line:
 Then reboot, and obtain the issued IP address as outlined above.
 
 The basic setup steps are outlined below for the packet forwarder for each 
-device, followed by `Install lora-gateway-bridge` below.
+device, followed by `Install lora-gateway-bridge` below.  This image shows how 
+the components connect to each other, and what some of the various settings 
+represent:
+
+![Gateway Pieces and Connections](/lora-gateway-bridge/img/MultitechGatewaySettings.png)
 
 #### Multitech Conduit AEP
 
@@ -97,6 +101,9 @@ signed certificate.  Accept the certificate to proceed.
         }
     }
     ```
+    Note that the serv_port_up and serv_port_down represent the ports used to 
+    communicate with the lora-gateway-bridge, usually on localhost (the 
+    server_address parameter).  See the image above.
     
 15. Select “Submit”.
 16. Select the “Save and Restart” option on the left menu.
@@ -107,16 +114,16 @@ The latest Conduit mLinux version makes setting up the device pretty straight
 forward.  Start by disabling the lora-network-server and enabling the 
 lora-packet-forwarder.  This is done by:
 
-1. Create the file /var/config/lora/global_conf.json and create the serrings by 
+1. Create the file /var/config/lora/global_conf.json and create the settings by 
    referencing the information at  
    http://www.multitech.net/developer/software/lora/conduit-mlinux-convert-to-basic-packet-forwarder/  
    and be sure to update the settings as described in step 14 for the
    Conduit AEP instructions above.
 
-2. Edit /etc/defaults/lora-network-server and change ENABLED="true" to
-   ENABLED="false".
-3. Edit /etc/defaults/lora-packet-forwarder and change ENABLED="false" to
-   ENABLED="true".
+2. Edit /etc/defaults/lora-network-server and change ENABLED="yes" to
+   ENABLED="no".
+3. Edit /etc/defaults/lora-packet-forwarder and change ENABLED="no" to
+   ENABLED="yes".
 4. Ensure that the lora-packet-forwarder will run after reboot by issuing the 
    command:
    
@@ -128,12 +135,19 @@ Now you will want to set up the lora-gateway-bridge on the device.  The
 following are suggested files and locations:
 
 1. Download the arm build of the lora-gateway-bridge (see `Downloads` on the 
-   left), and extract it to `/opt/lora-gateway-bridge/bin/`
+   left), and extract it to `/opt/lora-gateway-bridge/bin/`.  Note that at the 
+   time of this writing, the Multitech boxes are all running 32-bit arm 
+   processors.  This can be verified by issuing the command `uname -a`, where 
+   'armv7' or lower in the output represents 32-bit arm processors, and 'armv8'
+   or higher represents 64-bit arm processors.  Be sure to download the 
+   appropriate binary package for the system processor.
 
-2. Create a script to run the application with the appropriate settings for your
-   installation in /opt/lora-gateway-bridge/bin/runGateway.sh:
+2. Create a script (or download [here](/lora-gateway-bridge/scripts/multitech/runGateway.sh)) to run the application 
+   with the appropriate settings for your installation in 
+   /opt/lora-gateway-bridge/bin/runGateway.sh (ensure that the script is 
+   executable `chmod +x /opt/lora-gateway-bridge/bin/runGateway.sh`):
    
-   ```
+    ```
     #!/bin/bash
     # Starts the gateway code
 
@@ -163,11 +177,17 @@ following are suggested files and locations:
     PID=$!
     if [[ $PIDFILE != "" ]]; then
         echo $PID > $PIDFILE
-    fi```
-    
-3. Then create a startup script in /etc/init.d/lora-gateway-bridge:
+    fi
+ 
+    ```
+    Modify the MQTT_* values to reflect the settings for your system.    
 
-   ```
+3. Then create a startup script (or download [here](/lora-gateway-bridge/scripts/multitech/lora-gateway-bridge)) in 
+   /etc/init.d/lora-gateway-bridge (ensure that the script is executable 
+   `chmod +x /etc/init.d/lora-gateway-bridge`):
+
+
+    ```
     #!/bin/bash
     #
     # A SysV init script for the lora-gateway-bridge
@@ -246,10 +266,31 @@ following are suggested files and locations:
             exit 1
             ;;
     esac
-    exit $RETVAL```
+    exit $RETVAL
+    ```
     
 4. Make sure the script start on reboot:
 
     `update-rc.d lora-gateway-bridge defaults`
     
-5. Finally, restart the system to get everything running.
+5. Be sure to add the gateway to the lora-app-server.  See [here](/lora-app-server/use/gateways/).
+
+6. Finally, restart the system to get everything running.
+
+A few words about troubleshooting:
+
+Be sure to check log files to see what is happening.  Logs can be found on the 
+gateway in the directory `/var/log/`.  
+
+Also, if the gateway seems to be running, but no statistics are 
+appearing in lora-app-server, you may be experiencing a known bug with the 
+Multitech packet forwarding code.  On these systems, we need to swap out the 
+application that runs for packet formwarding.  The following should resolve the issue:
+```
+    $ cd /opt/lora
+    $ mv basic_pkt_fwd-usb basic_pkt_fwd-usb.orig
+    $ ln -s gps_pkt_fwd-usb basic_pkt_fwd-usb
+
+```
+
+Once these steps have been performed, reboot.
