@@ -54,6 +54,67 @@ func TestBackend(t *testing.T) {
 				})
 			})
 
+			Convey("When sending a TX_ACK packet (no error)", func() {
+				p := TXACKPacket{
+					ProtocolVersion: ProtocolVersion2,
+					RandomToken:     12345,
+					GatewayMAC:      [8]byte{1, 2, 3, 4, 5, 6, 7, 8},
+				}
+				b, err := p.MarshalBinary()
+				So(err, ShouldBeNil)
+				_, err = gwConn.WriteToUDP(b, backendAddr)
+				So(err, ShouldBeNil)
+
+				Convey("Then the ack is returned by the ack channel", func() {
+					ack := <-backend.TXAckChan()
+					So(ack, ShouldResemble, gw.TXAck{MAC: p.GatewayMAC, Token: p.RandomToken})
+				})
+			})
+
+			Convey("When sending a TX_ACK packet (with error)", func() {
+				p := TXACKPacket{
+					ProtocolVersion: ProtocolVersion2,
+					RandomToken:     12345,
+					GatewayMAC:      [8]byte{1, 2, 3, 4, 5, 6, 7, 8},
+					Payload: &TXACKPayload{
+						TXPKACK: TXPKACK{
+							Error: gw.ErrGPSUnlocked,
+						},
+					},
+				}
+				b, err := p.MarshalBinary()
+				So(err, ShouldBeNil)
+				_, err = gwConn.WriteToUDP(b, backendAddr)
+				So(err, ShouldBeNil)
+
+				Convey("Then the ack is returned by the ack channel", func() {
+					ack := <-backend.TXAckChan()
+					So(ack, ShouldResemble, gw.TXAck{MAC: p.GatewayMAC, Token: p.RandomToken, Error: gw.ErrGPSUnlocked})
+				})
+			})
+
+			Convey("When sending a TX_ACK packet (with error 'NONE')", func() {
+				p := TXACKPacket{
+					ProtocolVersion: ProtocolVersion2,
+					RandomToken:     12345,
+					GatewayMAC:      [8]byte{1, 2, 3, 4, 5, 6, 7, 8},
+					Payload: &TXACKPayload{
+						TXPKACK: TXPKACK{
+							Error: "NONE",
+						},
+					},
+				}
+				b, err := p.MarshalBinary()
+				So(err, ShouldBeNil)
+				_, err = gwConn.WriteToUDP(b, backendAddr)
+				So(err, ShouldBeNil)
+
+				Convey("Then the ack is returned by the ack channel", func() {
+					ack := <-backend.TXAckChan()
+					So(ack, ShouldResemble, gw.TXAck{MAC: p.GatewayMAC, Token: p.RandomToken})
+				})
+			})
+
 			Convey("When sending a PUSH_DATA packet with stats", func() {
 				p := PushDataPacket{
 					ProtocolVersion: ProtocolVersion2,
@@ -98,7 +159,10 @@ func TestBackend(t *testing.T) {
 			Convey("Given skipCRCCheck=false", func() {
 				backend.skipCRCCheck = false
 
-				Convey("When sending a PUSH_DATA packet with RXPK (CRC OK)", func() {
+				Convey("When sending a PUSH_DATA packet with RXPK (CRC OK + GPS timestamp)", func() {
+					ts := CompactTime(time.Now().UTC())
+					tmms := int64(time.Second / time.Millisecond)
+
 					p := PushDataPacket{
 						ProtocolVersion: ProtocolVersion2,
 						RandomToken:     1234,
@@ -106,8 +170,9 @@ func TestBackend(t *testing.T) {
 						Payload: PushDataPayload{
 							RXPK: []RXPK{
 								{
-									Time: CompactTime(time.Now().UTC()),
+									Time: &ts,
 									Tmst: 708016819,
+									Tmms: &tmms,
 									Freq: 868.5,
 									Chan: 2,
 									RFCh: 1,
@@ -141,9 +206,9 @@ func TestBackend(t *testing.T) {
 					Convey("Then the packet is returned by the RX packet channel", func() {
 						rxPacket := <-backend.RXPacketChan()
 
-						rxPacket2, err := newRXPacketFromRXPK(p.GatewayMAC, p.Payload.RXPK[0])
+						rxPackets, err := newRXPacketsFromRXPK(p.GatewayMAC, p.Payload.RXPK[0])
 						So(err, ShouldBeNil)
-						So(rxPacket, ShouldResemble, rxPacket2)
+						So(rxPacket, ShouldResemble, rxPackets[0])
 					})
 				})
 
@@ -155,7 +220,6 @@ func TestBackend(t *testing.T) {
 						Payload: PushDataPayload{
 							RXPK: []RXPK{
 								{
-									Time: CompactTime(time.Now().UTC()),
 									Tmst: 708016819,
 									Freq: 868.5,
 									Chan: 2,
@@ -196,7 +260,8 @@ func TestBackend(t *testing.T) {
 			Convey("Given skipCRCCheck=true", func() {
 				backend.skipCRCCheck = true
 
-				Convey("When sending a PUSH_DATA packet with RXPK (CRC OK)", func() {
+				Convey("When sending a PUSH_DATA packet with RXPK (CRC OK + GPS timestamp)", func() {
+					ts := CompactTime(time.Now().UTC())
 					p := PushDataPacket{
 						ProtocolVersion: ProtocolVersion2,
 						RandomToken:     1234,
@@ -204,7 +269,7 @@ func TestBackend(t *testing.T) {
 						Payload: PushDataPayload{
 							RXPK: []RXPK{
 								{
-									Time: CompactTime(time.Now().UTC()),
+									Time: &ts,
 									Tmst: 708016819,
 									Freq: 868.5,
 									Chan: 2,
@@ -239,9 +304,9 @@ func TestBackend(t *testing.T) {
 					Convey("Then the packet is returned by the RX packet channel", func() {
 						rxPacket := <-backend.RXPacketChan()
 
-						rxPacket2, err := newRXPacketFromRXPK(p.GatewayMAC, p.Payload.RXPK[0])
+						rxPackets, err := newRXPacketsFromRXPK(p.GatewayMAC, p.Payload.RXPK[0])
 						So(err, ShouldBeNil)
-						So(rxPacket, ShouldResemble, rxPacket2)
+						So(rxPacket, ShouldResemble, rxPackets[0])
 					})
 				})
 
@@ -253,7 +318,6 @@ func TestBackend(t *testing.T) {
 						Payload: PushDataPayload{
 							RXPK: []RXPK{
 								{
-									Time: CompactTime(time.Now().UTC()),
 									Tmst: 708016819,
 									Freq: 868.5,
 									Chan: 2,
@@ -288,21 +352,25 @@ func TestBackend(t *testing.T) {
 					Convey("Then the packet is returned by the RX packet channel", func() {
 						rxPacket := <-backend.RXPacketChan()
 
-						rxPacket2, err := newRXPacketFromRXPK(p.GatewayMAC, p.Payload.RXPK[0])
+						rxPackets, err := newRXPacketsFromRXPK(p.GatewayMAC, p.Payload.RXPK[0])
 						So(err, ShouldBeNil)
-						So(rxPacket, ShouldResemble, rxPacket2)
+						So(rxPacket, ShouldResemble, rxPackets[0])
 					})
 				})
 			})
 
 			Convey("Given a TXPacket", func() {
+				internalTS := uint32(12345)
+				timeSinceGPSEpoch := gw.Duration(time.Second)
+
 				txPacket := gw.TXPacketBytes{
 					TXInfo: gw.TXInfo{
-						MAC:         [8]byte{1, 2, 3, 4, 5, 6, 7, 8},
-						Immediately: true,
-						Timestamp:   12345,
-						Frequency:   868100000,
-						Power:       14,
+						MAC:               [8]byte{1, 2, 3, 4, 5, 6, 7, 8},
+						Immediately:       true,
+						Timestamp:         &internalTS,
+						TimeSinceGPSEpoch: &timeSinceGPSEpoch,
+						Frequency:         868100000,
+						Power:             14,
 						DataRate: band.DataRate{
 							Modulation:   band.LoRaModulation,
 							SpreadFactor: 12,
@@ -352,12 +420,14 @@ func TestBackend(t *testing.T) {
 						var pullResp PullRespPacket
 						So(pullResp.UnmarshalBinary(buf[:i]), ShouldBeNil)
 
+						tmms := int64(time.Second / time.Millisecond)
 						So(pullResp, ShouldResemble, PullRespPacket{
 							ProtocolVersion: p.ProtocolVersion,
 							Payload: PullRespPayload{
 								TXPK: TXPK{
 									Imme: true,
-									Tmst: 12345,
+									Tmst: &internalTS,
+									Tmms: &tmms,
 									Freq: 868.1,
 									Powe: 14,
 									Modu: "LORA",
@@ -451,28 +521,37 @@ func TestNewGatewayStatPacket(t *testing.T) {
 }
 
 func TestNewTXPKFromTXPacket(t *testing.T) {
+	internalTS := uint32(12345)
+
 	Convey("Given a TXPacket", t, func() {
+		timeSinceGPSEpoch := gw.Duration(time.Second)
+
 		txPacket := gw.TXPacketBytes{
 			TXInfo: gw.TXInfo{
-				Timestamp: 12345,
-				Frequency: 868100000,
-				Power:     14,
-				CodeRate:  "4/5",
+				Timestamp:         &internalTS,
+				TimeSinceGPSEpoch: &timeSinceGPSEpoch,
+				Frequency:         868100000,
+				Power:             14,
+				CodeRate:          "4/5",
 				DataRate: band.DataRate{
 					Modulation:   band.LoRaModulation,
 					SpreadFactor: 9,
 					Bandwidth:    250,
 				},
+				Board:   1,
+				Antenna: 2,
 			},
 			PHYPayload: []byte{1, 2, 3, 4},
 		}
 
 		Convey("Then te expected TXPK is returned (with default IPol", func() {
+			tmms := int64(time.Second / time.Millisecond)
 			txpk, err := newTXPKFromTXPacket(txPacket)
 			So(err, ShouldBeNil)
 			So(txpk, ShouldResemble, TXPK{
 				Imme: false,
-				Tmst: 12345,
+				Tmst: &internalTS,
+				Tmms: &tmms,
 				Freq: 868.1,
 				Powe: 14,
 				Modu: "LORA",
@@ -483,6 +562,8 @@ func TestNewTXPKFromTXPacket(t *testing.T) {
 				Size: 4,
 				Data: "AQIDBA==",
 				IPol: true,
+				Brd:  1,
+				Ant:  2,
 			})
 		})
 
@@ -500,10 +581,15 @@ func TestNewTXPKFromTXPacket(t *testing.T) {
 }
 
 func TestNewRXPacketFromRXPK(t *testing.T) {
-	Convey("Given a (Semtech) RXPK and gateway MAC", t, func() {
+	Convey("Given a RXPK and gateway MAC", t, func() {
 		now := time.Now().UTC()
+		nowCompact := CompactTime(now)
+		tmms := int64(time.Second / time.Millisecond)
+		timeSinceGPSEpoch := gw.Duration(time.Second)
+
 		rxpk := RXPK{
-			Time: CompactTime(now),
+			Time: &nowCompact,
+			Tmms: &tmms,
 			Tmst: 708016819,
 			Freq: 868.5,
 			Chan: 2,
@@ -519,21 +605,23 @@ func TestNewRXPacketFromRXPK(t *testing.T) {
 		}
 		mac := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
 
-		Convey("When calling newRXPacketFromRXPK(", func() {
-			rxPacket, err := newRXPacketFromRXPK(mac, rxpk)
+		Convey("When calling newRXPacketsFromRXPK without RSig field", func() {
+			rxPackets, err := newRXPacketsFromRXPK(mac, rxpk)
 			So(err, ShouldBeNil)
+			So(rxPackets, ShouldHaveLength, 1)
 
 			Convey("Then all fields are set correctly", func() {
-				So(rxPacket.PHYPayload, ShouldResemble, []byte{1, 2, 3, 4})
+				So(rxPackets[0].PHYPayload, ShouldResemble, []byte{1, 2, 3, 4})
 
-				So(rxPacket.RXInfo, ShouldResemble, gw.RXInfo{
-					MAC:       mac,
-					Time:      now,
-					Timestamp: 708016819,
-					Frequency: 868500000,
-					Channel:   2,
-					RFChain:   1,
-					CRCStatus: 1,
+				So(rxPackets[0].RXInfo, ShouldResemble, gw.RXInfo{
+					MAC:               mac,
+					Time:              &now,
+					TimeSinceGPSEpoch: &timeSinceGPSEpoch,
+					Timestamp:         708016819,
+					Frequency:         868500000,
+					Channel:           2,
+					RFChain:           1,
+					CRCStatus:         1,
 					DataRate: band.DataRate{
 						Modulation:   band.LoRaModulation,
 						SpreadFactor: 7,
@@ -543,6 +631,75 @@ func TestNewRXPacketFromRXPK(t *testing.T) {
 					RSSI:     -51,
 					LoRaSNR:  7,
 					Size:     16,
+				})
+			})
+		})
+
+		Convey("When calling newRXPacketsFromRXPK with multiple RSig elements", func() {
+			rxpk.Brd = 2
+			rxpk.RSig = []RSig{
+				{
+					Ant:   1,
+					Chan:  3,
+					LSNR:  1.5,
+					RSSIC: -50,
+				},
+				{
+					Ant:   2,
+					Chan:  3,
+					LSNR:  2,
+					RSSIC: -30,
+				},
+			}
+			rxPackets, err := newRXPacketsFromRXPK(mac, rxpk)
+			So(err, ShouldBeNil)
+			So(rxPackets, ShouldHaveLength, 2)
+
+			Convey("Then all fields are set correctly", func() {
+				So(rxPackets[0].PHYPayload, ShouldResemble, []byte{1, 2, 3, 4})
+				So(rxPackets[0].RXInfo, ShouldResemble, gw.RXInfo{
+					MAC:               mac,
+					Time:              &now,
+					TimeSinceGPSEpoch: &timeSinceGPSEpoch,
+					Timestamp:         708016819,
+					Frequency:         868500000,
+					Channel:           3,
+					RFChain:           1,
+					CRCStatus:         1,
+					DataRate: band.DataRate{
+						Modulation:   band.LoRaModulation,
+						SpreadFactor: 7,
+						Bandwidth:    125,
+					},
+					CodeRate: "4/5",
+					RSSI:     -50,
+					LoRaSNR:  1.5,
+					Size:     16,
+					Antenna:  1,
+					Board:    2,
+				})
+
+				So(rxPackets[1].PHYPayload, ShouldResemble, []byte{1, 2, 3, 4})
+				So(rxPackets[1].RXInfo, ShouldResemble, gw.RXInfo{
+					MAC:               mac,
+					Time:              &now,
+					TimeSinceGPSEpoch: &timeSinceGPSEpoch,
+					Timestamp:         708016819,
+					Frequency:         868500000,
+					Channel:           3,
+					RFChain:           1,
+					CRCStatus:         1,
+					DataRate: band.DataRate{
+						Modulation:   band.LoRaModulation,
+						SpreadFactor: 7,
+						Bandwidth:    125,
+					},
+					CodeRate: "4/5",
+					RSSI:     -30,
+					LoRaSNR:  2,
+					Size:     16,
+					Antenna:  2,
+					Board:    2,
 				})
 			})
 		})
@@ -592,6 +749,36 @@ func TestGatewaysCallbacks(t *testing.T) {
 					Convey("Then onDelete has been called once", func() {
 						So(onDeleteCalls, ShouldEqual, 1)
 					})
+				})
+			})
+		})
+	})
+}
+
+func TestNewTXAckFromTXPKACK(t *testing.T) {
+	Convey("Given a TXPKACK with error and a gateway mac", t, func() {
+		mac := lorawan.EUI64{1, 2, 3, 4, 5, 6, 7, 8}
+		ack := TXPKACK{
+			Error: gw.ErrTooEarly,
+		}
+
+		Convey("Then newTXAckFromTXPKACK returns the expected value", func() {
+			txAck := newTXAckFromTXPKACK(mac, 12345, ack)
+			So(txAck, ShouldResemble, gw.TXAck{
+				MAC:   mac,
+				Token: 12345,
+				Error: gw.ErrTooEarly,
+			})
+		})
+
+		Convey("Given the TXPKACK does not contain an error", func() {
+			ack.Error = "NONE"
+
+			Convey("Then newTXAckFromTXPKACK returns the expected value", func() {
+				txAck := newTXAckFromTXPKACK(mac, 12345, ack)
+				So(txAck, ShouldResemble, gw.TXAck{
+					MAC:   mac,
+					Token: 12345,
 				})
 			})
 		})

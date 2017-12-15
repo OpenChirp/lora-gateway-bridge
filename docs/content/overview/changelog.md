@@ -8,6 +8,33 @@ menu:
 
 ## Changelog
 
+### 2.2.0
+
+**Features:**
+
+* LoRa Gateway Bridge now publishes TX acknowledgement messages over MQTT.
+  See [MQTT topics](https://docs.loraserver.io/lora-gateway-bridge/use/data/).
+
+* TX (GPS) `timeSinceGPSEpoch` field is now exposed to transmit at given
+  time since GPS epoch (1980-01-06, only possible when the gateway
+  has a GPS time source).
+
+* RX (GPS) `timeSinceGPSEpoch` field is now exposed, containing the time
+  since GPS epoch (1980-01-06, only available when the gateway has a GPS
+  time source).
+
+**Bugfixes:**
+
+* Without GPS time source, the gateway would use `0001-01-01T00:00:00Z`
+  as RX `time`. The `time` field is now omitted when unavailable.
+
+
+### 2.1.6
+
+**Features:**
+
+* Add Kerlink iBTS compatibility (multi antenna and multi board).
+
 ### 2.1.5
 
 **Improvements:**
@@ -21,7 +48,6 @@ menu:
 * MQTT client library update which fixes an issue where during a failed
   re-connect the protocol version would be downgraded
   ([paho.mqtt.golang#116](https://github.com/eclipse/paho.mqtt.golang/issues/116)).
-
 
 ### 2.1.4
 

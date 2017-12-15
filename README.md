@@ -1,7 +1,6 @@
 # LoRa Gateway Bridge
 
 [![Build Status](https://travis-ci.org/brocaar/lora-gateway-bridge.svg?branch=master)](https://travis-ci.org/brocaar/lora-gateway-bridge)
-[![Gitter chat](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/loraserver/lora-gateway-bridge)
 
 LoRa Gateway Bridge is a service which abstracts the 
 [packet_forwarder UDP protocol](https://github.com/Lora-net/packet_forwarder/blob/master/PROTOCOL.TXT)
@@ -30,12 +29,12 @@ project.
 * [Contributing](https://docs.loraserver.io/lora-gateway-bridge/community/contribute/)
 * Support
   * [Support forum](https://forum.loraserver.io)
-  * [Support chat](https://gitter.im/loraserver/lora-gateway-bridge)
   * [Bug or feature requests](https://github.com/brocaar/lora-gateway-bridge/issues)
 
 ## Sponsors
 
 [![CableLabs](https://www.loraserver.io/img/sponsors/cablelabs.png)](https://www.cablelabs.com/)
+[![SIDNFonds](https://www.loraserver.io/img/sponsors/sidn_fonds.png)](https://www.sidnfonds.nl/)
 [![acklio](https://www.loraserver.io/img/sponsors/acklio.png)](http://www.ackl.io/)
 
 ## License

@@ -81,6 +81,7 @@ func (c *gateways) cleanup() error {
 // Backend implements a Semtech gateway backend.
 type Backend struct {
 	conn         *net.UDPConn
+	txAckChan    chan gw.TXAck
 	rxChan       chan gw.RXPacketBytes
 	statsChan    chan gw.GatewayStatsPacket
 	udpSendChan  chan udpPacket
@@ -105,6 +106,7 @@ func NewBackend(bind string, onNew func(lorawan.EUI64) error, onDelete func(lora
 	b := &Backend{
 		skipCRCCheck: skipCRCCheck,
 		conn:         conn,
+		txAckChan:    make(chan gw.TXAck),
 		rxChan:       make(chan gw.RXPacketBytes),
 		statsChan:    make(chan gw.GatewayStatsPacket),
 		udpSendChan:  make(chan udpPacket),
@@ -163,9 +165,15 @@ func (b *Backend) RXPacketChan() chan gw.RXPacketBytes {
 	return b.rxChan
 }
 
-// StatsChan returns the channel containg the received gateway stats.
+// StatsChan returns the channel containing the received gateway stats.
 func (b *Backend) StatsChan() chan gw.GatewayStatsPacket {
 	return b.statsChan
+}
+
+// TXAckChan returns the channel containing the TX acknowledgements
+// (or errors).
+func (b *Backend) TXAckChan() chan gw.TXAck {
+	return b.txAckChan
 }
 
 // Send sends the given packet to the gateway.
@@ -179,6 +187,7 @@ func (b *Backend) Send(txPacket gw.TXPacketBytes) error {
 		return err
 	}
 	pullResp := PullRespPacket{
+		RandomToken:     txPacket.Token,
 		ProtocolVersion: gw.protocolVersion,
 		Payload: PullRespPayload{
 			TXPK: txpk,
@@ -342,18 +351,21 @@ func (b *Backend) handleRXPacket(addr *net.UDPAddr, mac lorawan.EUI64, rxpk RXPK
 	}
 	log.WithFields(logFields).Info("gateway: rxpk packet received")
 
-	// decode packet
-	rxPacket, err := newRXPacketFromRXPK(mac, rxpk)
+	// decode packet(s)
+	rxPackets, err := newRXPacketsFromRXPK(mac, rxpk)
 	if err != nil {
 		return err
 	}
 
-	// check CRC
-	if !b.skipCRCCheck && rxPacket.RXInfo.CRCStatus != 1 {
-		log.WithFields(logFields).Warningf("gateway: invalid packet CRC: %d", rxPacket.RXInfo.CRCStatus)
-		return errors.New("gateway: invalid CRC")
+	for i := range rxPackets {
+		// check CRC
+		if !b.skipCRCCheck && rxPackets[i].RXInfo.CRCStatus != 1 {
+			log.WithFields(logFields).Warningf("gateway: invalid packet CRC: %d", rxPackets[i].RXInfo.CRCStatus)
+			return errors.New("gateway: invalid CRC")
+		}
+		b.rxChan <- rxPackets[i]
 	}
-	b.rxChan <- rxPacket
+
 	return nil
 }
 
@@ -362,23 +374,15 @@ func (b *Backend) handleTXACK(addr *net.UDPAddr, data []byte) error {
 	if err := p.UnmarshalBinary(data); err != nil {
 		return err
 	}
-	var errBool bool
 
-	logFields := log.Fields{
-		"mac":          p.GatewayMAC,
-		"random_token": p.RandomToken,
-	}
 	if p.Payload != nil {
-		if p.Payload.TXPKACK.Error != "NONE" {
-			errBool = true
-		}
-		logFields["error"] = p.Payload.TXPKACK.Error
-	}
-
-	if errBool {
-		log.WithFields(logFields).Error("gateway: tx ack received")
+		txAck := newTXAckFromTXPKACK(p.GatewayMAC, p.RandomToken, p.Payload.TXPKACK)
+		b.txAckChan <- txAck
 	} else {
-		log.WithFields(logFields).Info("gateway: tx ack received")
+		b.txAckChan <- gw.TXAck{
+			MAC:   p.GatewayMAC,
+			Token: p.RandomToken,
+		}
 	}
 
 	return nil
@@ -406,23 +410,25 @@ func newGatewayStatsPacket(mac lorawan.EUI64, stat Stat) gw.GatewayStatsPacket {
 	return gwStat
 }
 
-// newRXPacketFromRXPK transforms a Semtech packet into a gw.RXPacketBytes.
-func newRXPacketFromRXPK(mac lorawan.EUI64, rxpk RXPK) (gw.RXPacketBytes, error) {
+// newRXPacketsFromRXPK transforms a Semtech packet into a slice of
+// gw.RXPacketBytes.
+func newRXPacketsFromRXPK(mac lorawan.EUI64, rxpk RXPK) ([]gw.RXPacketBytes, error) {
 	dataRate, err := newDataRateFromDatR(rxpk.DatR)
 	if err != nil {
-		return gw.RXPacketBytes{}, fmt.Errorf("gateway: could not get DataRate from DatR: %s", err)
+		return nil, fmt.Errorf("gateway: could not get DataRate from DatR: %s", err)
 	}
 
 	b, err := base64.StdEncoding.DecodeString(rxpk.Data)
 	if err != nil {
-		return gw.RXPacketBytes{}, fmt.Errorf("gateway: could not base64 decode data: %s", err)
+		return nil, fmt.Errorf("gateway: could not base64 decode data: %s", err)
 	}
+
+	var rxPackets []gw.RXPacketBytes
 
 	rxPacket := gw.RXPacketBytes{
 		PHYPayload: b,
 		RXInfo: gw.RXInfo{
 			MAC:       mac,
-			Time:      time.Time(rxpk.Time),
 			Timestamp: rxpk.Tmst,
 			Frequency: int(rxpk.Freq * 1000000),
 			Channel:   int(rxpk.Chan),
@@ -433,9 +439,34 @@ func newRXPacketFromRXPK(mac lorawan.EUI64, rxpk RXPK) (gw.RXPacketBytes, error)
 			RSSI:      int(rxpk.RSSI),
 			LoRaSNR:   rxpk.LSNR,
 			Size:      int(rxpk.Size),
+			Board:     int(rxpk.Brd),
 		},
 	}
-	return rxPacket, nil
+
+	if rxpk.Time != nil {
+		ts := time.Time(*rxpk.Time)
+		rxPacket.RXInfo.Time = &ts
+	}
+
+	if rxpk.Tmms != nil {
+		d := gw.Duration(time.Duration(*rxpk.Tmms) * time.Millisecond)
+		rxPacket.RXInfo.TimeSinceGPSEpoch = &d
+	}
+
+	if len(rxpk.RSig) == 0 {
+		rxPackets = append(rxPackets, rxPacket)
+	}
+
+	for _, s := range rxpk.RSig {
+		rxPacket.RXInfo.Antenna = int(s.Ant)
+		rxPacket.RXInfo.Channel = int(s.Chan)
+		rxPacket.RXInfo.LoRaSNR = s.LSNR
+		rxPacket.RXInfo.RSSI = int(s.RSSIC)
+
+		rxPackets = append(rxPackets, rxPacket)
+	}
+
+	return rxPackets, nil
 }
 
 // newTXPKFromTXPacket transforms a gw.TXPacketBytes into a Semtech
@@ -451,6 +482,13 @@ func newTXPKFromTXPacket(txPacket gw.TXPacketBytes) (TXPK, error) {
 		CodR: txPacket.TXInfo.CodeRate,
 		Size: uint16(len(txPacket.PHYPayload)),
 		Data: base64.StdEncoding.EncodeToString(txPacket.PHYPayload),
+		Ant:  uint8(txPacket.TXInfo.Antenna),
+		Brd:  uint8(txPacket.TXInfo.Board),
+	}
+
+	if txPacket.TXInfo.TimeSinceGPSEpoch != nil {
+		tmms := int64(time.Duration(*txPacket.TXInfo.TimeSinceGPSEpoch) / time.Millisecond)
+		txpk.Tmms = &tmms
 	}
 
 	if txPacket.TXInfo.DataRate.Modulation == band.FSKModulation {
@@ -466,6 +504,19 @@ func newTXPKFromTXPacket(txPacket gw.TXPacketBytes) (TXPK, error) {
 	}
 
 	return txpk, nil
+}
+
+func newTXAckFromTXPKACK(mac lorawan.EUI64, token uint16, ack TXPKACK) gw.TXAck {
+	var err string
+	if ack.Error != "NONE" {
+		err = ack.Error
+	}
+
+	return gw.TXAck{
+		MAC:   mac,
+		Token: token,
+		Error: err,
+	}
 }
 
 func newDataRateFromDatR(d DatR) (band.DataRate, error) {
